@@ -47,7 +47,12 @@ def render_final_pdf(submission_id: int):
 
     if has_widgets:
         # AcroForm path: use either specialized handler or generic handler
-        name_to_value = handler.build_name_value_map(form_id, submission_id)
+        is_kp7 = (form_code or "").upper() == "KP-7"
+        if is_kp7:
+            # Names, addresses and continuation rows all come from one answer read.
+            name_to_value, people, respondents = handler.build_pdf_data(form_id, submission_id)
+        else:
+            name_to_value = handler.build_name_value_map(form_id, submission_id)
         
         # Persist computed values if handler supports it
         if hasattr(handler, 'persist_computed'):
@@ -58,7 +63,11 @@ def render_final_pdf(submission_id: int):
                 out_map=name_to_value
             )
         
-        FS.fill_acro_by_names(src, name_to_value)
+        if is_kp7:
+            from .kp7_pdf import fill_kp7_pdf
+            fill_kp7_pdf(src, name_to_value, people, respondents)
+        else:
+            FS.fill_acro_by_names(src, name_to_value)
     else:
         # Non-Acro path (draw text to coordinates) — answers-only, generic behavior
         answers = FS.load_answers(submission_id)          # {field_id: value}

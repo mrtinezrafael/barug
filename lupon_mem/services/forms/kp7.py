@@ -7,6 +7,7 @@ import re
 from zoneinfo import ZoneInfo  # For PH time
 
 from .. import form_shared as FS
+from ..kp7_parties import COMPLAINANT, RESPONDENT, snapshot_people, names_text, addresses_text
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,10 @@ class KP7Handler:
     """
 
     def build_name_value_map(self, form_id: int, submission_id: int) -> dict:
+        values, _, _ = self.build_pdf_data(form_id, submission_id)
+        return values
+
+    def build_pdf_data(self, form_id: int, submission_id: int):
         assert int(form_id) == 7
         answers_by_id = FS.load_answers(submission_id)
 
@@ -120,6 +125,16 @@ class KP7Handler:
             else:
                 out[target] = _find_any(sources)
 
+        # A saved snapshot preserves the selected identities and per-form addresses.
+        selected_people = snapshot_people(by_code.get(COMPLAINANT.snapshot_code))
+        selected_respondents = snapshot_people(by_code.get(RESPONDENT.snapshot_code))
+        if selected_people:
+            out["complainants"] = names_text(selected_people)
+            by_code["contact_one"] = addresses_text(selected_people)
+        if selected_respondents:
+            out["respondents"] = names_text(selected_respondents)
+            by_code["recipient_address"] = addresses_text(selected_respondents)
+
         # Remove "CIVIL CASE - " prefix from purpose if present
         if out.get("purpose") and out["purpose"].startswith("CIVIL CASE - "):
             out["purpose"] = out["purpose"][13:]
@@ -127,8 +142,7 @@ class KP7Handler:
         # ---------------------------------------------------
         # Propagate duplicates
         # ---------------------------------------------------
-        if not out.get("complainants_2") and out.get("complainants"):
-            out["complainants_2"] = out["complainants"]
+        out["complainants_2"] = out.get("complainants", "")
         if not out.get("year_received_2") and out.get("year_received"):
             out["year_received_2"] = out["year_received"]
 
@@ -349,6 +363,12 @@ class KP7Handler:
 
         logger.info("[KP7] Saving to DB: date_created='%s', processed_on_date='%s'",
                     save_out.get("date_created"), save_out.get("processed_on_date"))
+        # Party answers were already saved atomically with the case links.
+        # Rendering an older read must not overwrite a newer editor's party list.
+        for role, entries in ((COMPLAINANT, selected_people), (RESPONDENT, selected_respondents)):
+            if entries:
+                for code in role.name_codes:
+                    save_out.pop(code, None)
         FS.save_answers(submission_id, save_out)
         logger.info("[KP7] Auto-filled & saved case_time_filed=%s (submission=%s)", out.get("case_time_filed"), submission_id)
 
@@ -384,4 +404,4 @@ class KP7Handler:
         if processed_time:
             pdf_out["year_received_2"] = f"{recv_year} @{processed_time}"
 
-        return pdf_out
+        return pdf_out, selected_people, selected_respondents

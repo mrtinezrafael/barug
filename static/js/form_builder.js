@@ -46,6 +46,8 @@ function safeUrl(k){
 
 const qs = s => document.querySelector(s);
 const formEl    = qs("#formFields");
+// Match the form_id Django will read from this exact POST.
+const isForm7   = Number(formEl?.elements.namedItem("form_id")?.value) === 7;
 const saveBtn   = qs("#saveBtn");
 const submitBtn = qs("#submitBtn");
 
@@ -119,7 +121,16 @@ function setBusyEl(btn, busy){
 }
 
 /* ===== Save / Submit ===== */
-async function doSave(){
+let kp7PendingSave = null;
+function doSave() {
+  if (!isForm7) return saveCurrentForm();
+  if (!kp7PendingSave) {
+    kp7PendingSave = saveCurrentForm().finally(() => { kp7PendingSave = null; });
+  }
+  return kp7PendingSave;
+}
+
+async function saveCurrentForm(){
   if (!checkVisibleValidity(formEl)){
     showWarn("Please complete required fields.");
     throw new Error("Invalid form");
@@ -129,27 +140,33 @@ async function doSave(){
     const fd = new FormData(formEl);
     fd.set("answers", JSON.stringify(collectAnswers()));
     fd.set("answers_by_code", JSON.stringify(collectAnswersByCode()));
+    if (isForm7) {
+      if (!window.KP7Parties) throw new Error("Reload Form 7 to load the party selectors.");
+      window.KP7Parties.writeTo(fd);
+      window.KP7Parties.setSaving(true);
+    }
     const res = await fetch(safeUrl('save_answers'), { method:"POST", headers:{"X-CSRFToken":CSRF}, body:fd });
-    if(!res.ok) throw new Error("HTTP " + res.status);
-    const j = await res.json();
+    const j = await res.json().catch(() => ({error: "Please sign in again or reload the form."}));
+    if (!res.ok) throw new Error(j.error || "Save failed (HTTP " + res.status + ").");
     if (j.ok){
       if (!formEl.elements.submission_id){
         const hid = document.createElement("input");
         hid.type="hidden"; hid.name="submission_id"; hid.value=j.submission_id;
         formEl.appendChild(hid);
       }
-      // showOk("Draft saved.");
+      if (isForm7) window.KP7Parties.commitSaved(j);
       return j;
     }
-    throw new Error("Save failed.");
+    throw new Error(j.error || "Save failed.");
   }catch(err){
     showWarn(err.message || "Save failed.");
     throw err;
   }finally{
     setBusy(saveBtn, false);
+    if (isForm7) window.KP7Parties?.setSaving(false);
   }
 }
-saveBtn?.addEventListener("click", async (e)=>{ e.preventDefault(); await doSave(); });
+saveBtn?.addEventListener("click", (e)=>{ e.preventDefault(); doSave().catch(() => {}); });
 
 /* ===== Return helpers ===== */
 (function rememberReferrer(){
@@ -442,7 +459,8 @@ async function performSubmit(){
     setBusy(submitBtn, true);
     setBusyEl(confirmBtn, true);
 
-    if (!formEl.elements.submission_id){
+    // KP-7 must save current selections and answers even when editing a submission.
+    if (isForm7 || !formEl.elements.submission_id){
       if (!checkVisibleValidity(formEl)){
         showWarn("Please complete required fields.");
         return;
@@ -513,6 +531,7 @@ async function performSubmit(){
     setBusyEl(confirmBtn, false);
     confirmModal?.hide();
     _submitting = false;
+    if (isForm7) window.KP7Parties?.refreshControls();
   }
 }
 confirmBtn?.addEventListener("click", (e)=>{ e.preventDefault(); performSubmit(); });

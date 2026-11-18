@@ -45,7 +45,7 @@ def fetch_fields(cur, fid: int) -> Sequence[Tuple[int,int,str,str,bool,str]]:
         FROM kp_form_field kff
         JOIN kp_field f      ON f.field_id = kff.field_id
         JOIN kp_field_type t ON t.field_type_id = f.field_type_id
-        WHERE kff.form_id=%s
+        WHERE kff.form_id=%s AND f.field_code NOT IN ('kp7_complainant_parties', 'kp7_respondent_parties')
         ORDER BY kff.sort_order, kff.kp_form_field_id
         """,
         [fid],
@@ -158,13 +158,20 @@ def fetch_complainant_address(cur, case_id: int) -> str:
           LEFT JOIN addresss a ON a.address_id = p.address_id
           LEFT JOIN purok_sitio ps ON ps.purok_sitio_id = a.purok_sitio_id
          WHERE cc.blotter_case_id=%s
-         ORDER BY cc.complainant_case_id
+         ORDER BY cc.person_id
          LIMIT 1
         """,
         [case_id],
     )
     r = cur.fetchone()
     return (r and r[0]) or ""
+
+def _json_for_script(value) -> str:
+    # These lists are embedded in an application/json script in the template.
+    return (json.dumps(value, ensure_ascii=False)
+            .replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
+            .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
+
 
 def fetch_party_json(cur, case_id: int) -> Tuple[str, str]:
     cur.execute(
@@ -197,7 +204,7 @@ def fetch_party_json(cur, case_id: int) -> Tuple[str, str]:
         {"person_id": pid, "name": " ".join(x for x in [fn, mn, ln, sx] if (x or "").strip()).strip()}
         for (pid, fn, mn, ln, sx) in _r_rows
     ]
-    return json.dumps(complainants_list, ensure_ascii=False), json.dumps(respondents_list, ensure_ascii=False)
+    return _json_for_script(complainants_list), _json_for_script(respondents_list)
 
 def fetch_punong_barangay(cur) -> str:
     cur.execute(

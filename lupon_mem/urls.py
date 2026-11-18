@@ -3,6 +3,8 @@ from django.urls import path
 from . import views
 from lupon_mem import views_reports
 from . import views_api
+from . import views_kp7
+from .services.kp7_parties import RESPONDENT
 from . import views_cases
 from . import views_progress  # ← ADDED: import for flow progress API
 from . import views_hearing_api
@@ -45,10 +47,11 @@ urlpatterns = [
 
     # chooser + builder
     path("cases/<int:case_id>/forms/add/", views_cases.add_form_choose, name="add_form_choose"),
-    path("cases/<int:case_id>/forms/<int:form_id>/build/", views.form_builder, name="form_builder"),
+    path("cases/<int:case_id>/forms/<int:form_id>/build/", views_kp7.form_builder, name="form_builder"),
     # alias so templates can use 'form_build'
-    path("cases/<int:case_id>/forms/<int:form_id>/build/", views.form_builder, name="form_build"),
-    path("cases/<int:case_id>/submissions/<int:submission_id>/edit/", views.form_builder, name="form_builder"),
+    path("cases/<int:case_id>/forms/<int:form_id>/build/", views_kp7.form_builder, name="form_build"),
+    path("cases/<int:case_id>/submissions/<int:submission_id>/edit/", views_kp7.form_builder, name="form_builder"),
+    path("cases/<int:case_id>/submissions/<int:submission_id>/edit/", views_kp7.form_builder, name="form_edit"),
     path("cases/<int:case_id>/forms/choose/", views.add_form_choose_static, name="add_form_choose_static"),
     path("cases/<int:case_id>/forms/code/<slug:form_code>/build/", views.form_builder_by_code, name="form_builder_by_code"),
     path("cases/<int:case_id>/generate-summary/", views.generate_settlement_summary,
@@ -152,8 +155,11 @@ urlpatterns = [
     path("api/mediation-hearings/<int:case_id>/", views_cases.mediation_hearings_api, name="mediation_hearings_api"),
     path("api/submissions/<int:submission_id>/pdf/", views_api.submission_pdf, name="submission_pdf"),
     path("api/preview/", views_api.preview_image, name="preview_image"),
-    path("api/save-answers/", views_api.save_answers, name="save_answers"),
-    path("api/submit-form/", views_api.submit_form, name="submit_form"),
+    path("api/save-answers/", views_kp7.save_answers, name="save_answers"),
+    path("api/submit-form/", views_kp7.submit_form, name="submit_form"),
+    path("api/kp7/cases/<int:case_id>/complainants/", views_kp7.case_parties, name="kp7_complainants"),
+    path("api/kp7/cases/<int:case_id>/respondents/", views_kp7.case_parties, {"role": RESPONDENT}, name="kp7_respondents"),
+    path("api/kp7/people/", views_kp7.people_search, name="kp7_people_search"),
     path("api/staff-suggest/", views_api.staff_suggest, name="staff_suggest"),
     path("api/staff-suggest-all/", views_api.staff_suggest_all, name="staff_suggest_all"),
     path("resident-lookup/", views_api.resident_lookup, name="resident_lookup"),

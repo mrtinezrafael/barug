@@ -439,6 +439,10 @@
         <input type="hidden" name="case_id" value="{{ case_id }}">
         <input type="hidden" name="form_id" value="{{ form_id }}">
         {% if submission_id %}<input type="hidden" name="submission_id" value="{{ submission_id }}">{% endif %}
+        {% if form_id == 7 %}
+        {% include "lupon_mem/kp7_party_picker.html" with panel="kp7Complainants" prefix="kp7" singular="complainant" plural="complainants" instruction="Select the people filing this complaint." only %}
+        {% include "lupon_mem/kp7_party_picker.html" with panel="kp7Respondents" prefix="kp7Respondent" singular="respondent" plural="respondents" instruction="Select the people named as respondents in this complaint." only %}
+        {% endif %}
         <div class="row g-3">
           {% with 1 as page %}
           {% for kff_id, field_id, label, type_name, is_required, value, field_code in fields %}
@@ -553,9 +557,9 @@
                     {% elif form_id == 7 and field_id == 1129 %}
                       Date &amp; Time the Case Filed (mm/dd/yyyy @xx:xx AM/PM):
                     {% elif form_id == 7 and code == 'recipient_address' %}
-                      Address of the Respondent
+                      Respondent address summary
                     {% elif form_id == 7 and field_id == 1136 %}
-                      Address of the Complainant
+                      Complainant address summary
                     {% elif form_id == 7 and label|slugify == 'date-received-filed' %}
                       Date Received &amp; Filed: (mm/dd/yyyy)
                     {% elif form_id == 7 and label|slugify == 'made-this' %}
@@ -682,7 +686,7 @@
           <span class="when-idle"><i class="bi bi-cloud-arrow-up me-1"></i> Save Draft</span>
           <span class="when-busy d-none"><span class="spinner-border spinner-border-sm me-1"></span> Saving…</span>
         </button> -->
-        <button id="submitBtn" class="btn btn-brand">
+        <button type="button" id="submitBtn" class="btn btn-brand"{% if form_id == 7 %} disabled{% endif %}>
           <span class="when-idle">
             <i class="bi bi-check2-square me-1"></i>&#x20;
             {% if submission_id %}Save Changes &amp; Regenerate PDF{% else %}Submit &amp; Generate PDF{% endif %}
@@ -813,6 +817,9 @@
     "staff_suggest": "{% url 'lupon_mem:staff_suggest' %}",
     "person_suggest": "{% url 'lupon_mem:person_suggest' %}",
     "staff_suggest_all": "{% url 'lupon_mem:staff_suggest_all' %}",
+    "kp7_complainants": "{% url 'lupon_mem:kp7_complainants' case_id %}",
+    "kp7_respondents": "{% url 'lupon_mem:kp7_respondents' case_id %}",
+    "kp7_people_search": "{% url 'lupon_mem:kp7_people_search' %}",
     "case_detail": "{% url 'lupon_mem:case_detail' case_id %}"
   },
   "parties": {
@@ -967,8 +974,10 @@
 })();
 </script>
 {% endif %}
-<!-- Your existing JS file; untouched -->
-<script src="{% static 'js/form_builder.js' %}"></script>
+<script src="{% static 'js/form_builder.js' %}?v=kp7-parties-3"></script>
+{% if form_id == 7 %}
+<script src="{% static 'js/kp7_complainants.js' %}?v=kp7-parties-3"></script>
+{% endif %}
 {% if form_id == 42 %}
 <script>
 document.addEventListener('DOMContentLoaded', function arrangeKp9p2Fields() {

@@ -1,0 +1,17 @@
+<section id="{{ panel }}" class="border rounded-3 p-3 mb-4" aria-labelledby="{{ panel }}Title">
+  <h5 id="{{ panel }}Title">{{ plural|capfirst }}</h5>
+  <input type="hidden" name="kp7_{{ plural }}" disabled>
+  <p class="form-text">{{ instruction }} Each address applies to this form.</p>
+  <div id="{{ prefix }}LegacyNames" class="alert alert-info small" hidden></div>
+  {% if plural == "respondents" %}
+  <button id="{{ prefix }}Review" type="button" class="btn btn-sm btn-outline-secondary mb-2" hidden>Review respondent list</button>
+  {% endif %}
+  <div id="{{ prefix }}Editor">
+    <label class="form-label" for="{{ prefix }}PersonSearch">Add a {{ singular }}</label>
+    <input id="{{ prefix }}PersonSearch" type="search" class="form-control" autocomplete="off" placeholder="Search a person by name" disabled>
+    <div id="{{ prefix }}SearchResults" class="list-group mt-2" aria-label="Matching people"></div>
+    <div id="{{ prefix }}SelectedPeople" class="d-grid gap-2 mt-2"></div>
+  </div>
+  <p id="{{ prefix }}PartyStatus" class="small mt-2 mb-1" role="status" aria-live="polite">Loading {{ plural }}…</p>
+  <button id="{{ prefix }}ReloadPeople" type="button" class="btn btn-sm btn-outline-secondary" hidden>Try loading again</button>
+</section>
