@@ -14,6 +14,9 @@ from .util import get_lupon_chair_name, get_case_time_filed_from_kp7
 
 logger = logging.getLogger(__name__)
 
+# The KP-16 builder explicitly shows field 33 for the Made This picker.
+_MADE_THIS_FIELD_ID = 33
+
 # Exact PDF field names in kp_form_no_16_ammicable_settlement.pdf
 _KP16_FIELDS = [
     "complainants",
@@ -95,6 +98,14 @@ class KP16Handler:
     """
 
     # ---------- parsing / formatting helpers ----------
+
+    @staticmethod
+    def _is_made_this_field(field_id: int, label: str, code: str) -> bool:
+        return (
+            field_id == _MADE_THIS_FIELD_ID
+            or code in {"made_this", "made_this_date"}
+            or re.match(r"^made[\s_-]+this\b", label.strip(), re.IGNORECASE) is not None
+        )
 
     @staticmethod
     def _try_parse_date(s: str) -> _date | None:
@@ -235,12 +246,21 @@ class KP16Handler:
 
         by_label: Dict[str, str] = {}
         by_code: Dict[str, str] = {}
+        made_this_date = None
+        legacy_picker_day = ""
         for fid, label, code in rows:
             code = (code or "").strip().lower()
             val = answers_by_id.get(str(fid))
             if isinstance(val, str):
                 val = FS.sanitize_text(val)
             if val not in (None, "", "null"):
+                if self._is_made_this_field(fid, label or "", code):
+                    picker_text = FS.normalize(val)
+                    picked = self._try_parse_date(picker_text)
+                    if picked and (fid == _MADE_THIS_FIELD_ID or made_this_date is None):
+                        made_this_date = picked
+                    elif picker_text.isdecimal() and 1 <= int(picker_text) <= 31:
+                        legacy_picker_day = picker_text
                 # The processed time input may still have a filing-time label in the database.
                 if label and code != "date_time_field":
                     by_label[label.strip().lower()] = val
@@ -341,29 +361,28 @@ class KP16Handler:
             time_obj = case_time_by_num if case_time_by_num else None
         out["time_filed"] = self._fmt_time_12h(time_obj)
 
-        # ---- entered date trio: extract from processed_on_date if available ----
-        now_ph = _dt.now(ZoneInfo("Asia/Manila"))
-        today = now_ph.date()
-
-        # Check if processed_on_date exists in answers
-        processed_date_str = _find_any({"processed_on_date", "processed on (date)", "date_processed"})
-        processed_date_obj = self._try_parse_date(processed_date_str) if processed_date_str else None
-
-        # Use processed_on_date if available, otherwise use today
-        source_date = processed_date_obj if processed_date_obj else today
-
-        if not (out.get("date_entered") or "").strip():
-            out["date_entered"] = str(source_date.day)
+        # A complete picker date supplies all three PDF fields on every render.
+        processed = self._try_parse_date(out["processed_on_date"])
+        # Old renders sometimes saved only the picker's day. A processing date
+        # on a different day cannot recover that original selection.
+        if legacy_picker_day and processed and int(legacy_picker_day) != processed.day:
+            processed = None
+        entered = (
+            made_this_date
+            or self._try_parse_date(FS.sanitize_text(by_code.get("date_entered")))
+            or processed
+            or self._try_parse_date(out["date_entered"])
+        )
+        if entered:
+            out["date_entered"] = str(entered.day)
+            out["month_entered"] = entered.strftime("%B")
+            out["year_entered"] = str(entered.year)
         else:
-            maybe = self._try_parse_date(out["date_entered"])
-            if maybe:
-                out["date_entered"] = str(maybe.day)
-
-        if not (out.get("month_entered") or "").strip():
-            out["month_entered"] = source_date.strftime("%B")
-
-        if not (out.get("year_entered") or "").strip():
-            out["year_entered"] = str(source_date.year)
+            # Older submissions may contain just the three individual PDF values.
+            today = _dt.now(ZoneInfo("Asia/Manila")).date()
+            out["date_entered"] = legacy_picker_day or out["date_entered"] or str(today.day)
+            out["month_entered"] = out["month_entered"] or today.strftime("%B")
+            out["year_entered"] = out["year_entered"] or str(today.year)
 
         # ---- Chairman → Barangay Captain ----
         if not (out.get("chairman") or "").strip():
@@ -417,22 +436,30 @@ class KP16Handler:
             cur.execute(
                 """
                 SELECT kff.field_id, LOWER(COALESCE(kff.label_override, f.base_label)) AS label,
-                       LOWER(f.field_code) AS code
+                       LOWER(f.field_code) AS code, a.value_json
                   FROM kp_form_field kff
                   JOIN kp_field f ON f.field_id = kff.field_id
+                  LEFT JOIN blotter_kp_answer a
+                    ON a.field_id = f.field_id AND a.submission_id = %s
                  WHERE kff.form_id = %s
                 """,
-                [form_id],
+                [submission_id, form_id],
             )
             rows = cur.fetchall()
 
         # Create reverse mapping from PDF field names to database field_ids
         field_mapping = {}
-        for field_id, label, code in rows:
+        for field_id, label, code, saved_answer in rows:
             label_lower = (label or "").strip().lower()
             code_lower = (code or "").strip().lower()
-            if code_lower == "date_time_field":
-                continue  # Preserve the user's Processed On (Time) answer.
+            if code_lower == "date_time_field" or self._is_made_this_field(field_id, label_lower, code_lower):
+                continue
+            keys = {code_lower, label_lower}
+            if keys & _KP16_SOURCES["processed_on_date"]:
+                continue
+            # Some older layouts use an entered-day alias as the full date input.
+            if keys & _KP16_SOURCES["date_entered"] and self._try_parse_date(FS.sanitize_text(saved_answer)):
+                continue
 
             # Map PDF field names to database field_ids
             for pdf_field, source_keys in _KP16_SOURCES.items():
@@ -456,3 +483,4 @@ class KP16Handler:
                         """,
                         [submission_id, field_id, _json.dumps(value)]
                     )
+
